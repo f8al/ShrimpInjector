@@ -1,3 +1,19 @@
+```
+╔═══════════════════════════════════════════════════ ShrimpInjector ════════════════════════════════════════════════════╗
+║   ██████  ██░ ██  ██▀███   ██▓ ███▄ ▄███▓ ██▓███   ██▓ ███▄    █  ▄▄▄██▀▀▀▓█████  ▄████▄  ▄▄▄█████▓ ▒█████   ██▀███   ║
+║ ▒██    ▒ ▓██░ ██▒▓██ ▒ ██▒▓██▒▓██▒▀█▀ ██▒▓██░  ██▒▓██▒ ██ ▀█   █    ▒██   ▓█   ▀ ▒██▀ ▀█  ▓  ██▒ ▓▒▒██▒  ██▒▓██ ▒ ██▒ ║
+║ ░ ▓██▄   ▒██▀▀██░▓██ ░▄█ ▒▒██▒▓██    ▓██░▓██░ ██▓▒▒██▒▓██  ▀█ ██▒   ░██   ▒███   ▒▓█    ▄ ▒ ▓██░ ▒░▒██░  ██▒▓██ ░▄█ ▒ ║
+║   ▒   ██▒░▓█ ░██ ▒██▀▀█▄  ░██░▒██    ▒██ ▒██▄█▓▒ ▒░██░▓██▒  ┌▌██▒▓██▄██▓  ▒▓█  ▄ ▒▓▓▄ ▄██▒░ ▓██▓ ░ ▒██   ██░▒██▀▀█▄   ║
+║ ▒██████▒▒░▓█▒░██▓░██▓ ▒██▒░██░▒██▒   ░██▒▒██▒ ░  ░░██░▒██░   ▓██░ ▓███▒   ░▒████▒▒ ▓███▀ ░  ▒██▒ ░ ░ ████▓▒░░██▓ ▒██▒ ║
+║ ▒ ▒▓▒ ▒ ░ ▒ ░░▒░▒░ ▒▓ ░▒▓░░▓  ░ ▒░   ░  ░▒▓▒░ ░  ░░▓  ░ ▒░   ▒ ▒  ▒▓▒▒░   ░░ ▒░ ░░ ░▒ ▒  ░  ▒ ░░   ░ ▒░▒░▒░ ░ ▒▓ ░▒▓░ ║
+║ ░ ░▒  ░ ░ ▒ ░▒░ ░  ░▒ ░ ▒░ ▒ ░░  ░      ░░▒ ░      ▒ ░░ ░░   ░ ▒░ ▒ ░▒░    ░ ░  ░  ░  ▒       ░      ░ ▒ ▒░   ░▒ ░ ▒░ ║
+║ ░  ░  ░   ░  ░░ ░  ░░   ░  ▒ ░░      ░   ░░        ▒ ░   ░   ░ ░  ░ ░ ░      ░   ░          ░      ░ ░ ░ ▒    ░░   ░  ║
+║       ░   ░  ░  ░   ░      ░         ░             ░           ░  ░   ░      ░  ░░ ░                   ░ ░     ░      ║
+║                                                                                  ░                                    ║
+║                                                                                                                       ║
+╚═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+```
+
 # ShrimpInjector
 
 A unified, msfvenom-style command-line tool for building .NET assembly and shellcode payloads using Windows LOLBins (Living Off the Land Binaries). ShrimpInjector consolidates 11 payload generation scripts into a single tool with consistent syntax, encryption, and environmental keying across all payload types.
@@ -303,4 +319,4 @@ This tool is intended for authorized security testing and research only. Use of 
 
 ## Author
 
-**SecurityShrimp** — [https://github.com/f8al](https://github.com/f8al)
+**f8al** — [https://github.com/f8al](https://github.com/f8al)
