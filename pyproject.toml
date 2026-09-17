@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shrimpinjector"
-version = "1.0.0"
+version = "1.0"
 description = "Unified .NET assembly & shellcode payload builder"
 requires-python = ">=3.8"
 license = {text = "MIT"}
