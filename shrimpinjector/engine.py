@@ -37,6 +37,29 @@ def uncomment_block(template: str, start_marker: str, end_marker: str) -> str:
     return "\n".join(result)
 
 
+def uncomment_csharp_block(template: str, start_marker: str, end_marker: str) -> str:
+    lines = template.split("\n")
+    in_block = False
+    result = []
+    for line in lines:
+        if start_marker in line:
+            in_block = True
+            continue
+        elif end_marker in line:
+            in_block = False
+            continue
+        elif in_block:
+            if line.startswith("// "):
+                result.append(line[3:])
+            elif line.strip() == "//":
+                result.append("")
+            else:
+                result.append(line)
+        else:
+            result.append(line)
+    return "\n".join(result)
+
+
 def build_vba_chunks(b64_payload: str) -> str:
     chunks = [b64_payload[i : i + CHUNK_SIZE] for i in range(0, len(b64_payload), CHUNK_SIZE)]
     lines = []

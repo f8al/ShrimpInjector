@@ -2,11 +2,11 @@
 
 # ShrimpInjector
 
-A unified, msfvenom-style command-line tool for building .NET assembly and shellcode payloads using Windows LOLBins (Living Off the Land Binaries). ShrimpInjector consolidates 16 payload generation scripts into a single tool with consistent syntax, encryption, and environmental keying across all payload types.
+A unified, msfvenom-style command-line tool for building .NET assembly and shellcode payloads using Windows LOLBins (Living Off the Land Binaries). ShrimpInjector consolidates 20 payload generation scripts into a single tool with consistent syntax, encryption, and environmental keying across all payload types.
 
 ## Features
 
-- **16 payload types** covering C# LOLBins, PowerShell, VBScript, HTA, VBA macros, COM scriptlets, XSL transforms, INF installers, and raw shellcode
+- **20 payload types** covering C# LOLBins, PowerShell, VBScript, HTA, VBA macros, COM scriptlets, XSL transforms, INF installers, native DLL LOLBins, and raw shellcode
 - **AES-256-CBC** encryption with random or user-supplied keys
 - **XOR encryption** with no external dependencies
 - **Environmental keying** — derive the AES key from target host properties so the payload only decrypts on the intended machine
@@ -61,6 +61,18 @@ shrimpinjector cmstp payload.exe -o payload.sct
 # VBA shellcode runner from donut output
 shrimpinjector shellcode payload.bin -x --no-wait -o runner.bas
 
+# SyncAppvPublishingServer PowerShell bypass
+shrimpinjector syncappvpub payload.exe -o payload.ps1
+
+# csi.exe Roslyn script (requires Visual Studio)
+shrimpinjector csi payload.exe -o payload.csx
+
+# control.exe applet — auto-compile with MinGW
+shrimpinjector control payload.exe --compile -o payload.cpp
+
+# msiexec DLL registration
+shrimpinjector msiexec payload.exe --compile -o payload.cpp
+
 # Pass arguments through to the .NET assembly
 shrimpinjector msbuild Seatbelt.exe -- -group=all --full
 ```
@@ -79,6 +91,7 @@ These payload types embed an encrypted .NET assembly inside a C# source file des
 | `regasm` | `RegAsm.exe` | `.cs` / `.dll` | COM unregister handler — executes via `/U` flag |
 | `regsvcs` | `RegSvcs.exe` | `.cs` / `.dll` | COM+ registration — requires strong-named assembly (auto-generates `.snk`) |
 | `csc` | `csc.exe` | `.cs` / `.exe` | Direct compile and execute — self-contained C# source |
+| `csi` | `csi.exe` | `.csx` | Roslyn interactive script — top-level C#, no compilation needed, requires Visual Studio |
 
 ### Script-Based Payloads
 
@@ -87,6 +100,7 @@ These payload types embed an encrypted .NET assembly inside a script that bootst
 | Type | Execution | Output | Description |
 |------|-----------|--------|-------------|
 | `powershell` | `powershell.exe` | `.ps1` | In-memory assembly load via `[System.Reflection.Assembly]` |
+| `syncappvpub` | `SyncAppvPublishingServer.exe` | `.ps1` | PowerShell execution via App-V publishing sync — bypasses constrained execution policies |
 | `vbscript` | `cscript.exe` | `.vbs` | CLR bootstrap via `MSCorLib` COM object |
 | `hta` | `mshta.exe` | `.hta` | HTML Application — same CLR bootstrap as VBScript, browser context |
 | `vba` | Excel / Word | `.bas` | VBA macro with base64 chunking (800-char lines) for VBA editor limits |
@@ -102,6 +116,15 @@ These payload types use the same CLR bootstrap as VBScript but wrap it in altern
 | `cmstp` | `cmstp.exe` | `.inf` + `.sct` | Connection Manager profile installer — INF triggers scriptlet load, UAC bypass potential |
 | `rundll32` | `rundll32.exe` | `.sct` | JavaScript `GetObject()` loads a COM scriptlet — fileless when combined with remote URL |
 | `infdefaultinstall` | `InfDefaultInstall.exe` | `.inf` + `.sct` | Lesser-known INF handler — same scriptlet mechanism as CMSTP, fewer detections |
+
+### Native DLL Payloads
+
+These payload types embed an encrypted .NET assembly inside a native C++ DLL that hosts the CLR via COM interop. No .NET metadata is visible in the DLL — the assembly is decrypted and loaded entirely through native API calls. Requires MinGW cross-compiler (`brew install mingw-w64` on macOS).
+
+| Type | LOLBin | Output | Description |
+|------|--------|--------|-------------|
+| `control` | `control.exe` | `.cpp` / `.cpl` | Control Panel applet — `CPlApplet` export triggers execution when loaded by `control.exe` |
+| `msiexec` | `msiexec.exe` | `.cpp` / `.dll` | DLL registration — `DllRegisterServer` export triggers execution via `msiexec /y` |
 
 ### Shellcode Payload
 
@@ -225,6 +248,23 @@ shrimpinjector regsvcs payload.exe --compile --keyfile existing.snk
 
 Requires [Mono](https://www.mono-project.com/) (`brew install mono` on macOS).
 
+### Native DLL Compilation
+
+The `control` and `msiexec` types produce C++ source that must be cross-compiled with MinGW:
+
+```bash
+# Auto-compile to .cpl (control.exe applet)
+shrimpinjector control payload.exe --compile
+
+# Auto-compile to .dll (msiexec /y)
+shrimpinjector msiexec payload.exe --compile
+
+# Or compile manually
+x86_64-w64-mingw32-g++ -shared -o payload.cpl payload_ready.cpp -loleaut32 -lole32 -static-libgcc -static-libstdc++ -s
+```
+
+Requires [MinGW-w64](https://www.mingw-w64.org/) (`brew install mingw-w64` on macOS).
+
 ## Workflow Compiler
 
 The `workflow` type is unique in that it produces 4 output files that must all be present on the target:
@@ -283,7 +323,9 @@ Payload types:
   regasm             RegAsm unregister handler (.cs)
   regsvcs            RegSvcs COM+ registration (.cs)
   csc                csc.exe compile and run (.cs)
+  csi                csi.exe Roslyn script (.csx)
   powershell         PowerShell cradle (.ps1)
+  syncappvpub        SyncAppvPublishingServer (.ps1)
   vbscript           VBScript CLR bootstrap (.vbs)
   hta                HTA application (.hta)
   vba                VBA macro (.bas)
@@ -293,6 +335,8 @@ Payload types:
   cmstp              CMSTP profile installer (.inf + .sct)
   rundll32           Rundll32 scriptlet (.sct)
   infdefaultinstall  InfDefaultInstall (.inf + .sct)
+  control            control.exe applet (.cpp / .cpl)
+  msiexec            msiexec /y DLL (.cpp / .dll)
 
 Common options:
   -e, --encryption {aes,xor}   Encryption mode (default: aes)

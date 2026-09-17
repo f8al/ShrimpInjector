@@ -187,6 +187,30 @@ def build_parser():
     p.add_argument("assembly", help=".NET assembly")
     _add_common_args(p)
 
+    # --- syncappvpub ---
+    p = subparsers.add_parser("syncappvpub", help=PAYLOAD_DESCRIPTIONS["syncappvpub"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+    _add_keying_args(p)
+
+    # --- csi ---
+    p = subparsers.add_parser("csi", help=PAYLOAD_DESCRIPTIONS["csi"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+    _add_type_method_args(p)
+
+    # --- control ---
+    p = subparsers.add_parser("control", help=PAYLOAD_DESCRIPTIONS["control"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+    _add_compile_arg(p)
+
+    # --- msiexec ---
+    p = subparsers.add_parser("msiexec", help=PAYLOAD_DESCRIPTIONS["msiexec"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+    _add_compile_arg(p)
+
     # --- shellcode ---
     p = subparsers.add_parser("shellcode", help=PAYLOAD_DESCRIPTIONS["shellcode"])
     p.add_argument("shellcode", help="Raw shellcode file (.bin)")

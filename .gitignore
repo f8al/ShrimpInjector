@@ -5,3 +5,6 @@ dist/
 build/
 *.egg
 .eggs/
+output/
+AGENT.md
+HANDOFF.md
