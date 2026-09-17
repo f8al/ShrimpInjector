@@ -425,8 +425,13 @@ done:
 // === DLL exports ===
 
 BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
-    if (reason == DLL_PROCESS_ATTACH)
+    if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hInst);
+        // DLLMAIN_EXECUTE_START
+        // CoInitializeEx(NULL, COINIT_MULTITHREADED);
+        // Execute();
+        // DLLMAIN_EXECUTE_END
+    }
     return TRUE;
 }
 

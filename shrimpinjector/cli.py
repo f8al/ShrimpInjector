@@ -151,11 +151,13 @@ def build_parser():
     p = subparsers.add_parser("vbscript", help=PAYLOAD_DESCRIPTIONS["vbscript"])
     p.add_argument("assembly", help=".NET assembly")
     _add_common_args(p)
+    p.add_argument("--staged", help="Staged delivery URL — dropper fetches payload at runtime")
 
     # --- hta ---
     p = subparsers.add_parser("hta", help=PAYLOAD_DESCRIPTIONS["hta"])
     p.add_argument("assembly", help=".NET assembly")
     _add_common_args(p)
+    p.add_argument("--staged", help="Staged delivery URL — dropper fetches payload at runtime")
 
     # --- vba ---
     p = subparsers.add_parser("vba", help=PAYLOAD_DESCRIPTIONS["vba"])
@@ -207,6 +209,34 @@ def build_parser():
 
     # --- msiexec ---
     p = subparsers.add_parser("msiexec", help=PAYLOAD_DESCRIPTIONS["msiexec"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+    _add_compile_arg(p)
+
+    # --- odbcconf ---
+    p = subparsers.add_parser("odbcconf", help=PAYLOAD_DESCRIPTIONS["odbcconf"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+    _add_compile_arg(p)
+
+    # --- mavinject ---
+    p = subparsers.add_parser("mavinject", help=PAYLOAD_DESCRIPTIONS["mavinject"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+    _add_compile_arg(p)
+
+    # --- certutil ---
+    p = subparsers.add_parser("certutil", help=PAYLOAD_DESCRIPTIONS["certutil"])
+    p.add_argument("assembly", help="Any file to encode for certutil transfer")
+    p.add_argument("-o", "--output", help="Output .b64 file")
+
+    # --- pcalua ---
+    p = subparsers.add_parser("pcalua", help=PAYLOAD_DESCRIPTIONS["pcalua"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+
+    # --- te ---
+    p = subparsers.add_parser("te", help=PAYLOAD_DESCRIPTIONS["te"])
     p.add_argument("assembly", help=".NET assembly")
     _add_common_args(p)
     _add_compile_arg(p)
