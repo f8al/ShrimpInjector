@@ -2,11 +2,11 @@
 
 # ShrimpInjector
 
-A unified, msfvenom-style command-line tool for building .NET assembly and shellcode payloads using Windows LOLBins (Living Off the Land Binaries). ShrimpInjector consolidates 11 payload generation scripts into a single tool with consistent syntax, encryption, and environmental keying across all payload types.
+A unified, msfvenom-style command-line tool for building .NET assembly and shellcode payloads using Windows LOLBins (Living Off the Land Binaries). ShrimpInjector consolidates 16 payload generation scripts into a single tool with consistent syntax, encryption, and environmental keying across all payload types.
 
 ## Features
 
-- **11 payload types** covering C# LOLBins, PowerShell, VBScript, HTA, VBA macros, and raw shellcode
+- **16 payload types** covering C# LOLBins, PowerShell, VBScript, HTA, VBA macros, COM scriptlets, XSL transforms, INF installers, and raw shellcode
 - **AES-256-CBC** encryption with random or user-supplied keys
 - **XOR encryption** with no external dependencies
 - **Environmental keying** — derive the AES key from target host properties so the payload only decrypts on the intended machine
