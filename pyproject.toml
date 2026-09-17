@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shrimpinjector"
+version = "1.0.0"
+description = "Unified .NET assembly & shellcode payload builder"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "SecurityShrimp", email = "tools@securityshrimp.com"},
+]
+
+[project.optional-dependencies]
+aes = ["cryptography"]
+
+[project.scripts]
+shrimpinjector = "shrimpinjector.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["shrimpinjector*"]
+
+[tool.setuptools.package-data]
+shrimpinjector = ["templates/*"]
