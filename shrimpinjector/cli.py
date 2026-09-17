@@ -162,6 +162,31 @@ def build_parser():
     p.add_argument("assembly", help=".NET assembly")
     _add_common_args(p)
 
+    # --- regsvr32 ---
+    p = subparsers.add_parser("regsvr32", help=PAYLOAD_DESCRIPTIONS["regsvr32"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+
+    # --- wmic ---
+    p = subparsers.add_parser("wmic", help=PAYLOAD_DESCRIPTIONS["wmic"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+
+    # --- cmstp ---
+    p = subparsers.add_parser("cmstp", help=PAYLOAD_DESCRIPTIONS["cmstp"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+
+    # --- rundll32 ---
+    p = subparsers.add_parser("rundll32", help=PAYLOAD_DESCRIPTIONS["rundll32"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+
+    # --- infdefaultinstall ---
+    p = subparsers.add_parser("infdefaultinstall", help=PAYLOAD_DESCRIPTIONS["infdefaultinstall"])
+    p.add_argument("assembly", help=".NET assembly")
+    _add_common_args(p)
+
     # --- shellcode ---
     p = subparsers.add_parser("shellcode", help=PAYLOAD_DESCRIPTIONS["shellcode"])
     p.add_argument("shellcode", help="Raw shellcode file (.bin)")

