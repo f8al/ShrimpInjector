@@ -916,18 +916,27 @@ def build_wmic(args, assembly_args):
 
 
 def _build_sct_inf_pair(args, assembly_args, inf_template, inf_output, execution_cmd):
+    if args.output:
+        inf_path = args.output
+        sct_output = os.path.splitext(inf_path)[0] + ".sct"
+    else:
+        inf_path = os.path.join(OUTPUT_DIR, inf_output)
+        sct_output = os.path.join(OUTPUT_DIR, "payload_ready.sct")
+
+    saved_output = args.output
+    args.output = sct_output
     sct_path = _build_vbs_family(
         args, assembly_args,
         template_file="regsvr32_payload.sct",
         output_file="payload_ready.sct",
     )
+    args.output = saved_output
 
     inf_tpl_path = get_template_path(inf_template, None)
     inf_content = load_template(inf_tpl_path)
     inf_content = inf_content.replace("YOURSCTPATHHERE", os.path.basename(sct_path))
 
-    inf_dir = os.path.dirname(sct_path) or "."
-    inf_path = os.path.join(inf_dir, inf_output)
+    _ensure_output_dir(inf_path)
     with open(inf_path, "w") as f:
         f.write(inf_content)
 
