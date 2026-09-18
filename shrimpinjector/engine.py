@@ -49,9 +49,11 @@ def uncomment_csharp_block(template: str, start_marker: str, end_marker: str) ->
             in_block = False
             continue
         elif in_block:
-            if line.startswith("// "):
-                result.append(line[3:])
-            elif line.strip() == "//":
+            stripped = line.lstrip()
+            indent = line[: len(line) - len(stripped)]
+            if stripped.startswith("// "):
+                result.append(indent + stripped[3:])
+            elif stripped == "//":
                 result.append("")
             else:
                 result.append(line)

